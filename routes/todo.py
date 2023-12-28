@@ -3,46 +3,43 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, status, Path
 
 from database.connection import DBDependency
+from auth.authentication import UserClaimDependency
 from models.todo import Todo, TodoReqeust
 
-router = APIRouter(prefix='/todos', tags=['Todos API'])
+router = APIRouter(prefix='/todos', tags=['Todo API'])
 
 
-def get_todo_or_404(session, id) -> Todo:
-    todo_db = session.query(Todo).filter(Todo.id == id).first()
-    if not todo_db:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'ID #{id} not exist.')
-    return todo_db
-
-
-# Endpoints
 @router.get('/', status_code=status.HTTP_200_OK)
-async def retrieve_all(db_session: DBDependency):
-    return db_session.query(Todo).all()
+async def retrieve_all(db: DBDependency, user_claims: UserClaimDependency):
+    return db.query(Todo).filter(Todo.owner_id == user_claims.id)
 
 
 @router.post('/', status_code=status.HTTP_201_CREATED)
-async def create(db_session: DBDependency, body: TodoReqeust):
-    new_todo = Todo(**body.model_dump())
-    db_session.add(new_todo)
-    db_session.commit()
+async def create(db: DBDependency, user_claims: UserClaimDependency, body: TodoReqeust):
+    new_todo: Todo = Todo(owner_id=user_claims.id, **body.model_dump())
+    db.add(new_todo)
+    db.commit()
 
 
 @router.get('/{todo_id}', status_code=status.HTTP_200_OK)
-async def retrieve_by_id(db_session: DBDependency, todo_id: Annotated[int, Path(gt=0)]):
-    return get_todo_or_404(db_session, todo_id)
+async def retrieve_by_id(db: DBDependency, user_claims: UserClaimDependency, todo_id: Annotated[int, Path(gt=0)]):
+    return db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == user_claims.id).first()
 
 
 @router.put('/{todo_id}', status_code=status.HTTP_204_NO_CONTENT)
-async def update(db_session: DBDependency, body: TodoReqeust, todo_id: Annotated[int, Path(gt=0)]):
-    todo_db = get_todo_or_404(db_session, todo_id)
-    todo_db.update(body)
-    db_session.add(todo_db)
-    db_session.commit()
+async def update(db: DBDependency, body: TodoReqeust, todo_id: Annotated[int, Path(gt=0)]) -> None:
+    db_todo: Todo = db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == user_claims.id).first()
+    if not db_todo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Does not exist.')
+    db_todo.update(**body.model_dump())
+    db.add(db_todo)
+    db.commit()
 
 
 @router.delete('/{todo_id}', status_code=status.HTTP_204_NO_CONTENT)
-async def delete(db_session: DBDependency, todo_id: Annotated[int, Path(gt=0)]):
-    todo_db = get_todo_or_404(db_session, todo_id)
-    db_session.delete(todo_db)
-    db_session.commit()
+async def delete(db: DBDependency, user_claims:UserClaimDependency, todo_id: Annotated[int, Path(gt=0)]) -> None:
+    db_todo: Todo = db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == user_claims.id).first()
+    if not db_todo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Does not exist.')
+    db.delete(db_todo)
+    db.commit()

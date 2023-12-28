@@ -29,8 +29,10 @@ class Todo(BaseTodo, table=True):
     created_at: datetime = Field(default=datetime.utcnow(), nullable=False)
     completed_at: datetime = Field(nullable=True)
 
-    def update(self, body):
-        for key, value in body.model_dump(exclude_none=True).items():
+    owner_id = Field(int, foreign_key='users.id')
+
+    def update(self, **kwargs):
+        for key, value in kwargs.items():
             setattr(self, key, value)
             if key == 'complete' and value == True:
                 self.completed_at = datetime.utcnow()
